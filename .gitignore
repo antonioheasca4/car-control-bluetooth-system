@@ -1,0 +1,12 @@
+# MCUXpresso build folders
+Debug/
+Release/
+
+# IDE / workspace
+.metadata/
+*.mex_backup
+*.log
+*.launch
+
+# Generated files not needed
+.cproject.bak

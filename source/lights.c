@@ -1,8 +1,9 @@
 #include "lights.h"
 #include "fsl_gpio.h"
 
-#define LED_GPIO GPIOB
-#define LED_PIN  18
+#define LED_GPIO GPIOC
+#define LED_PIN 1
+
 
 void Lights_Init(void)
 {
@@ -24,7 +25,7 @@ void Lights_Auto(uint16_t ldrValue)
 {
     const uint16_t threshold = 1500; // ajustare prag
 
-    if (ldrValue > threshold)
+    if (ldrValue < threshold)
         Lights_On();
     else
         Lights_Off();

@@ -52,6 +52,18 @@ BOARD_InitPins:
  * END ****************************************************************************************************************/
 void BOARD_InitPins(void)
 {
+
+	CLOCK_EnableClock(kCLOCK_PortC);  // activează ceasul pentru portul C
+
+	PORT_SetPinMux(PORTC, 1U, kPORT_MuxAsGpio); // PTC1 ca GPIO
+
+	CLOCK_EnableClock(kCLOCK_PortB); // activează ceasul pentru portul B
+
+	// PTB0 - ADC0_SE8
+	PORT_SetPinMux(PORTB, 0U, kPORT_PinDisabledOrAnalog);
+
+
+
     /* Port A Clock Gate Control: Clock enabled */
     CLOCK_EnableClock(kCLOCK_PortA);
 

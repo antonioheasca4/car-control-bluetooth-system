@@ -19,9 +19,9 @@ int main(void)
     BOARD_InitBootPins();
     BOARD_InitBootClocks();
     BOARD_InitBootPeripherals();
-#ifndef BOARD_INIT_DEBUG_CONSOLE_PERIPHERAL
+    
+    // Initialize debug console (UART0 for printf)
     BOARD_InitDebugConsole();
-#endif
 
 #ifdef TEST_LDR_LED
     run_test_ldr_led();

@@ -9,7 +9,7 @@ The project includes Bluetooth control, automatic headlights using LDR sensing, 
 
 ### Automatic Headlight System (LDR + LED)
 - LDR connected to **PTB0 (ADC0_SE8)**
-- LED connected to **PTB18 (GPIO)**
+- LED connected to **PTC1 (GPIO)**
 - Threshold-based auto-lighting logic
 - Fully testable via the modular test system
 
@@ -98,5 +98,5 @@ project-root/
 | Component | KL25Z Pin | Function   |
 |----------|-----------|------------|
 | LDR      | PTB0      | ADC0_SE8   |
-| LED      | PTB18     | GPIO       |
+| LED      | PTC1      | GPIO       |
 ```

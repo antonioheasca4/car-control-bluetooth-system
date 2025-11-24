@@ -1,6 +1,9 @@
 #ifndef LIGHTS_H
 #define LIGHTS_H
 
+#include <stdint.h>
+
+
 void Lights_Init(void);
 void Lights_On(void);
 void Lights_Off(void);

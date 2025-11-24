@@ -4,25 +4,56 @@
 #include "pin_mux.h"
 #include "clock_config.h"
 #include "fsl_debug_console.h"
+#include "fsl_common.h"
+#include "fsl_clock.h"
+#include "fsl_lpsci.h"
+
+
+
 
 #include "ldr.h"
 #include "lights.h"
 
+// Test function to send raw bytes via UART
+void UART_SendByte(uint8_t byte)
+{
+    while (!(UART0->S1 & UART0_S1_TDRE_MASK));
+    UART0->D = byte;
+}
+
+void UART_SendString(const char *str)
+{
+    while (*str)
+    {
+        UART_SendByte(*str++);
+    }
+}
+
 void run_test_ldr_led(void)
 {
-    PRINTF("\r\n===== TEST LDR + LED =====\r\n");
+    // Test UART directly
+    UART_SendString("\r\n===== TEST LDR + LED =====\r\n");
+    UART_SendString("UART Direct Test - Starting...\r\n");
 
     Ldr_Init();
     Lights_Init();
+    
+    UART_SendString("LDR and LED initialized\r\n");
 
     while (1)
     {
         uint16_t val = Ldr_Read();
 
-        PRINTF("LDR value: %d\r\n", val);
+        UART_SendString("LDR=");
+        // Simple number to string conversion
+        char numStr[10];
+        sprintf(numStr, "%d", val);
+        UART_SendString(numStr);
+        UART_SendString("\r\n");
 
         Lights_Auto(val);
 
-        SDK_DelayAtLeastUs(200000, CLOCK_GetFreq(kCLOCK_CoreSysClk)); // 200ms
+        for (volatile int i = 0; i < 1000000; i++);
+
     }
 }

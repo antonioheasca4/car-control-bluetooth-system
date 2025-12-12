@@ -1,6 +1,7 @@
 #include "lights.h"
 #include "fsl_gpio.h"
 
+// LED connected to PTC1 (J10 on FRDM-KL25Z)
 #define LED_GPIO GPIOC
 #define LED_PIN 1
 
@@ -24,9 +25,12 @@ void Lights_Off(void)
 void Lights_Auto(uint16_t ldrValue)
 {
     const uint16_t threshold = 1500; // ajustare prag
-
+    
+    // LDR Pull-Down configuration (3.3V → LDR → PTB0 → 10kΩ → GND):
+    // Bright light → LDR low resistance → HIGH voltage → HIGH ADC value
+    // Darkness → LDR high resistance → LOW voltage → LOW ADC value
     if (ldrValue < threshold)
-        Lights_On();
+        Lights_On();   // Low ADC = Dark → LED ON
     else
-        Lights_Off();
+        Lights_Off();  // High ADC = Bright → LED OFF
 }

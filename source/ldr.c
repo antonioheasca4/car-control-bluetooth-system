@@ -1,6 +1,10 @@
 #include "fsl_adc16.h"
 #include "ldr.h"
 
+/**
+ * @brief Initialize LDR sensor (ADC)
+ * LDR connected to PTB0 (J10, ADC0_SE8)
+ */
 void Ldr_Init(void)
 {
     adc16_config_t config;
@@ -12,6 +16,11 @@ void Ldr_Init(void)
     ADC16_DoAutoCalibration(ADC0);
 }
 
+/**
+ * @brief Read LDR value from ADC
+ * @return ADC value (0-4095 for 12-bit, 0-65535 for 16-bit)
+ *         Higher value = More light resistance = Darker environment
+ */
 uint16_t Ldr_Read(void)
 {
     adc16_channel_config_t channel = {0};

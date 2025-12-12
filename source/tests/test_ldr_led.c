@@ -7,6 +7,7 @@
 #include "fsl_common.h"
 #include "fsl_clock.h"
 #include "fsl_lpsci.h"
+#include "../uart.h"
 
 
 
@@ -14,20 +15,7 @@
 #include "ldr.h"
 #include "lights.h"
 
-// Test function to send raw bytes via UART
-void UART_SendByte(uint8_t byte)
-{
-    while (!(UART0->S1 & UART0_S1_TDRE_MASK));
-    UART0->D = byte;
-}
 
-void UART_SendString(const char *str)
-{
-    while (*str)
-    {
-        UART_SendByte(*str++);
-    }
-}
 
 void run_test_ldr_led(void)
 {

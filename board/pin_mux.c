@@ -52,15 +52,17 @@ BOARD_InitPins:
  * END ****************************************************************************************************************/
 void BOARD_InitPins(void)
 {
+	// Port C - LED and other GPIO
+	CLOCK_EnableClock(kCLOCK_PortC);
+	PORT_SetPinMux(PORTC, 1U, kPORT_MuxAsGpio); // PTC1 (J10) - LED Headlight
 
-	CLOCK_EnableClock(kCLOCK_PortC);  // activează ceasul pentru portul C
+	// Port B - ADC inputs
+	CLOCK_EnableClock(kCLOCK_PortB);
+	PORT_SetPinMux(PORTB, 0U, kPORT_PinDisabledOrAnalog); // PTB0 (J10) - LDR (ADC0_SE8)
 
-	PORT_SetPinMux(PORTC, 1U, kPORT_MuxAsGpio); // PTC1 ca GPIO
-
-	CLOCK_EnableClock(kCLOCK_PortB); // activează ceasul pentru portul B
-
-	// PTB0 - ADC0_SE8
-	PORT_SetPinMux(PORTB, 0U, kPORT_PinDisabledOrAnalog);
+	// Port D - DHT11 and other sensors
+	CLOCK_EnableClock(kCLOCK_PortD);
+	PORT_SetPinMux(PORTD, 4U, kPORT_MuxAsGpio); // PTD4 (J1) - DHT11
 
 
 

@@ -4,6 +4,7 @@
 #include "fsl_clock.h"
 #include "board.h"
 #include "MKL25Z4.h"
+#include "uart.h"
 
 // DHT11 connected to PTD4 (J1-D4 on FRDM-KL25Z)
 // Using 3-pin DHT11 module with built-in 10kΩ pull-up resistor
@@ -72,6 +73,8 @@ void DHT11_Init(void)
     
     // Wait for sensor stabilization (1 second after power-on)
     DHT11_DelayMs(1000);
+
+    UART_SendString("  DHT11 init finish  \r\n");
 }
 
 const char *DHT11_GetErrorString(DHT11_ErrorCode code)

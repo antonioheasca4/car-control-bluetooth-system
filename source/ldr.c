@@ -1,5 +1,6 @@
 #include "fsl_adc16.h"
 #include "ldr.h"
+#include "uart.h"
 
 /**
  * @brief Initialize LDR sensor (ADC)
@@ -14,6 +15,8 @@ void Ldr_Init(void)
     ADC16_EnableHardwareTrigger(ADC0, false);
 
     ADC16_DoAutoCalibration(ADC0);
+
+    UART_SendString("  LDR init finish  \r\n");
 }
 
 /**

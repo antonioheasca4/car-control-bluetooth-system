@@ -52,38 +52,42 @@ BOARD_InitPins:
  * END ****************************************************************************************************************/
 void BOARD_InitPins(void)
 {
-	// Port C - LED and other GPIO
-	CLOCK_EnableClock(kCLOCK_PortC);
-	PORT_SetPinMux(PORTC, 1U, kPORT_MuxAsGpio); // PTC1 (J10) - LED Headlight
-
-	// Port B - ADC inputs
-	CLOCK_EnableClock(kCLOCK_PortB);
-	PORT_SetPinMux(PORTB, 0U, kPORT_PinDisabledOrAnalog); // PTB0 (J10) - LDR (ADC0_SE8)
-
-	// Port D - DHT11 and other sensors
-	CLOCK_EnableClock(kCLOCK_PortD);
-	PORT_SetPinMux(PORTD, 4U, kPORT_MuxAsGpio); // PTD4 (J1) - DHT11
-
-
-
-    /* Port A Clock Gate Control: Clock enabled */
+	// =========================================
+	// Port A - UART0 (Bluetooth) + Motor PWM
+	// =========================================
     CLOCK_EnableClock(kCLOCK_PortA);
-
     /* PORTA1 (pin 27) is configured as UART0_RX */
     PORT_SetPinMux(BOARD_INITPINS_DEBUG_UART_RX_PORT, BOARD_INITPINS_DEBUG_UART_RX_PIN, kPORT_MuxAlt2);
-
     /* PORTA2 (pin 28) is configured as UART0_TX */
     PORT_SetPinMux(BOARD_INITPINS_DEBUG_UART_TX_PORT, BOARD_INITPINS_DEBUG_UART_TX_PIN, kPORT_MuxAlt2);
+    // PTA4 = TPM0_CH1 (Motor Left PWM) - configured in motor.c
+    // PTA5 = TPM0_CH2 (Motor Right PWM) - configured in motor.c
 
     SIM->SOPT5 = ((SIM->SOPT5 &
-                   /* Mask bits to zero which are setting */
                    (~(SIM_SOPT5_UART0TXSRC_MASK | SIM_SOPT5_UART0RXSRC_MASK)))
-
-                  /* UART0 transmit data source select: UART0_TX pin. */
                   | SIM_SOPT5_UART0TXSRC(SOPT5_UART0TXSRC_UART_TX)
-
-                  /* UART0 receive data source select: UART0_RX pin. */
                   | SIM_SOPT5_UART0RXSRC(SOPT5_UART0RXSRC_UART_RX));
+
+	// =========================================
+	// Port B - ADC (LDR) + Motor Direction
+	// =========================================
+	CLOCK_EnableClock(kCLOCK_PortB);
+	PORT_SetPinMux(PORTB, 0U, kPORT_PinDisabledOrAnalog); // PTB0 - LDR (ADC0_SE8)
+	// PTB1, PTB2, PTB3 = Motor direction pins - configured in motor.c
+
+	// =========================================
+	// Port C - LED + Motor Direction + Ultrasonic
+	// =========================================
+	CLOCK_EnableClock(kCLOCK_PortC);
+	PORT_SetPinMux(PORTC, 1U, kPORT_MuxAsGpio);  // PTC1 - LED Headlight
+	// PTC2 = Motor Right IN2 - configured in motor.c
+	// PTC8, PTC9 = Ultrasonic TRIG/ECHO - configured in ultrasonic.c
+
+	// =========================================
+	// Port D - DHT11 only
+	// =========================================
+	CLOCK_EnableClock(kCLOCK_PortD);
+	PORT_SetPinMux(PORTD, 4U, kPORT_MuxAsGpio);  // PTD4 - DHT11 Data
 }
 /***********************************************************************************************************************
  * EOF

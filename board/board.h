@@ -50,7 +50,7 @@
 #define BOARD_UART_IRQ_HANDLER UART0_IRQHandler
 
 #ifndef BOARD_DEBUG_UART_BAUDRATE
-#define BOARD_DEBUG_UART_BAUDRATE 115200
+#define BOARD_DEBUG_UART_BAUDRATE 9600  // 9600 for HC-05
 #endif /* BOARD_DEBUG_UART_BAUDRATE */
 
 /*! @brief Indexes of the TSI channels for on board electrodes */

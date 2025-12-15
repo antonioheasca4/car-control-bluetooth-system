@@ -1,5 +1,6 @@
 #include "lights.h"
 #include "fsl_gpio.h"
+#include "uart.h"
 
 // LED connected to PTC1 (J10 on FRDM-KL25Z)
 #define LED_GPIO GPIOC
@@ -10,6 +11,8 @@ void Lights_Init(void)
 {
     gpio_pin_config_t cfg = {kGPIO_DigitalOutput, 0};
     GPIO_PinInit(LED_GPIO, LED_PIN, &cfg);
+
+    UART_SendString("  Lights init finish  \r\n");
 }
 
 void Lights_On(void)

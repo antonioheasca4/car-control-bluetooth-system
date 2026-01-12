@@ -9,16 +9,9 @@
  * 
  * Connections (UPDATED for available header pins):
  *   - TRIG: PTC8 (J1) - GPIO Output
- *   - ECHO: PTC9 (J1) - GPIO Input - USE VOLTAGE DIVIDER!
+ *   - ECHO: PTC9 (J1) - GPIO Input - WITH VOLTAGE DIVIDER!
  *   - VCC:  5V (external)
  *   - GND:  Common ground with FRDM
- * 
- * WARNING: ECHO pin outputs 5V! Use voltage divider:
- *   ECHO --[1kΩ]--+-- PTC9
- *                 |
- *              [2kΩ]
- *                 |
- *                GND
  */
 
 // Measurement range

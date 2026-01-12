@@ -19,9 +19,10 @@
  * Round trip: 0.0343 / 2 = 0.01715 cm/µs
  * So: distance_cm = time_µs * 0.01715 ≈ time_µs / 58
  * 
- * UPDATED PIN ASSIGNMENTS (for available header pins):
- *   - TRIG: PTC8 (J1)
- *   - ECHO: PTC9 (J1) - USE VOLTAGE DIVIDER!
+ * TIMING IMPLEMENTATION:
+ * Uses TPM2 as a free-running counter for precise timing.
+ * TPM2 config: 48MHz / 32 (prescaler) = 1.5MHz = 0.667µs per tick
+ * This provides hardware-based timing independent of interrupts.
  */
 
 // Pin definitions - Port C (J1 header)
@@ -33,20 +34,65 @@
 #define ULTRASONIC_ECHO_PORT    PORTC
 #define ULTRASONIC_ECHO_PIN     9U          // PTC9 (J1)
 
-// Timing constants (at 48MHz core clock)
-#define CYCLES_PER_US           48U
-#define TIMEOUT_US              30000U  // 30ms timeout (~5m max distance)
+// Timer configuration (TPM2 @ 48MHz with prescaler 32 = 1.5MHz)
+// 1 tick = 0.667µs, overflow at 65535 ticks = ~43.7ms
+#define TPM2_PRESCALER          5U          // PS=5 means divide by 32
+#define TPM2_FREQ_HZ            1500000U    // 48MHz / 32 = 1.5MHz
+#define TICKS_PER_US_NUM        3U          // 1.5 ticks per µs (numerator)
+#define TICKS_PER_US_DEN        2U          // 1.5 ticks per µs (denominator)
+
+// Timeout: 30ms = 30000µs * 1.5 = 45000 ticks
+#define TIMEOUT_TICKS           45000U
+// For shorter waits (e.g., waiting for ECHO to go HIGH after TRIG)
+#define SHORT_TIMEOUT_TICKS     15000U      // ~10ms
 
 /**
- * @brief Microsecond delay using busy loop
+ * @brief Read the current TPM2 counter value
+ */
+static inline uint16_t Ultrasonic_GetTicks(void)
+{
+    return (uint16_t)(TPM2->CNT & 0xFFFF);
+}
+
+/**
+ * @brief Calculate elapsed ticks handling 16-bit overflow
+ */
+static inline uint16_t Ultrasonic_ElapsedTicks(uint16_t start, uint16_t end)
+{
+    return (uint16_t)(end - start);  // Works correctly with 16-bit wrap-around
+}
+
+/**
+ * @brief Convert ticks to microseconds
+ * Formula: µs = ticks * 2 / 3 (since 1.5 ticks = 1µs)
+ */
+static inline uint32_t Ultrasonic_TicksToUs(uint16_t ticks)
+{
+    return ((uint32_t)ticks * TICKS_PER_US_DEN) / TICKS_PER_US_NUM;
+}
+
+/**
+ * @brief Convert microseconds to ticks
+ * Formula: ticks = µs * 3 / 2 (since 1µs = 1.5 ticks)
+ */
+static inline uint16_t Ultrasonic_UsToTicks(uint32_t us)
+{
+    uint32_t ticks = (us * TICKS_PER_US_NUM) / TICKS_PER_US_DEN;
+    if (ticks > 0xFFFF) ticks = 0xFFFF;
+    return (uint16_t)ticks;
+}
+
+/**
+ * @brief Microsecond delay using TPM2 hardware timer
+ * Much more precise than NOP-based delay
  */
 static void Ultrasonic_DelayUs(uint32_t us)
 {
-    volatile uint32_t cycles = us * 16;  // Approximate for 48MHz
-    while (cycles--) {
-        __asm("nop");
-        __asm("nop");
-        __asm("nop");
+    uint16_t startTicks = Ultrasonic_GetTicks();
+    uint16_t delayTicks = Ultrasonic_UsToTicks(us);
+    
+    while (Ultrasonic_ElapsedTicks(startTicks, Ultrasonic_GetTicks()) < delayTicks) {
+        // Busy wait using hardware timer
     }
 }
 
@@ -70,6 +116,37 @@ static inline void Ultrasonic_SetTrig(uint8_t value)
     }
 }
 
+/**
+ * @brief Initialize TPM2 as free-running counter for timing
+ */
+static void Ultrasonic_InitTimer(void)
+{
+    // Enable TPM2 clock gate
+    SIM->SCGC6 |= SIM_SCGC6_TPM2_MASK;
+    
+    // TPM clock source should already be set to MCGFLLCLK in motor.c
+    // But set it here too in case ultrasonic is initialized first
+    SIM->SOPT2 = (SIM->SOPT2 & ~SIM_SOPT2_TPMSRC_MASK) | SIM_SOPT2_TPMSRC(1);
+    
+    // Stop TPM2 before configuring
+    TPM2->SC = 0;
+    
+    // Reset counter
+    TPM2->CNT = 0;
+    
+    // Set prescaler to divide by 32 (PS=5)
+    // 48MHz / 32 = 1.5MHz = 0.667µs per tick
+    TPM2->SC = TPM_SC_PS(TPM2_PRESCALER);
+    
+    // Set MOD to maximum for free-running mode
+    TPM2->MOD = 0xFFFF;
+    
+    // Start TPM2 with internal clock
+    TPM2->SC |= TPM_SC_CMOD(1);
+    
+    UART_SendString("  TPM2 timer configured (1.5MHz)\r\n");
+}
+
 void Ultrasonic_Init(void)
 {
     gpio_pin_config_t trigConfig = {
@@ -81,6 +158,9 @@ void Ultrasonic_Init(void)
         .pinDirection = kGPIO_DigitalInput,
         .outputLogic = 0U
     };
+    
+    // Initialize TPM2 timer first (needed for delays)
+    Ultrasonic_InitTimer();
     
     // Enable Port C clock (for PTC8 and PTC9)
     CLOCK_EnableClock(kCLOCK_PortC);
@@ -96,53 +176,67 @@ void Ultrasonic_Init(void)
     // Ensure TRIG starts LOW
     Ultrasonic_SetTrig(0);
     
-    // Wait for sensor to stabilize
-    Ultrasonic_DelayUs(50000);  // 50ms
+    // Wait for sensor to stabilize (50ms)
+    Ultrasonic_DelayUs(50000);
 
-    UART_SendString("  ULTRASONIC init finish  \r\n");
+    UART_SendString("  ULTRASONIC init finish\r\n");
 }
 
 uint32_t Ultrasonic_GetPulseUs(void)
 {
-    uint32_t timeout;
-    uint32_t pulseWidth = 0;
+    uint16_t startTicks, endTicks, waitStart;
+    uint16_t pulseTicks;
     
     // Debug: check initial ECHO state
     if (Ultrasonic_ReadEcho() == 1) {
         UART_SendString("[US] Warning: ECHO is HIGH before trigger!\r\n");
+        // Wait for ECHO to go LOW with timeout
+        waitStart = Ultrasonic_GetTicks();
+        while (Ultrasonic_ReadEcho() == 1) {
+            if (Ultrasonic_ElapsedTicks(waitStart, Ultrasonic_GetTicks()) > SHORT_TIMEOUT_TICKS) {
+                UART_SendString("[US] Error: ECHO stuck HIGH, cannot measure\r\n");
+                return 0;
+            }
+        }
     }
     
     // Ensure TRIG is LOW before starting
     Ultrasonic_SetTrig(0);
     Ultrasonic_DelayUs(2);
     
-    // Send 10µs trigger pulse
+    // Send 10µs trigger pulse (hardware-timed, precise)
     Ultrasonic_SetTrig(1);
     Ultrasonic_DelayUs(10);
     Ultrasonic_SetTrig(0);
     
     // Wait for ECHO to go HIGH (with timeout)
-    timeout = TIMEOUT_US;
+    waitStart = Ultrasonic_GetTicks();
     while (Ultrasonic_ReadEcho() == 0) {
-        Ultrasonic_DelayUs(1);
-        if (--timeout == 0) {
+        if (Ultrasonic_ElapsedTicks(waitStart, Ultrasonic_GetTicks()) > SHORT_TIMEOUT_TICKS) {
             UART_SendString("[US] Timeout: ECHO never went HIGH\r\n");
-            return 0;  // Timeout waiting for echo start
+            return 0;
         }
     }
     
-    // Measure ECHO pulse width (time it stays HIGH)
-    timeout = TIMEOUT_US;
+    // Capture start time immediately when ECHO goes HIGH
+    startTicks = Ultrasonic_GetTicks();
+    
+    // Wait for ECHO to go LOW (measure pulse duration)
     while (Ultrasonic_ReadEcho() == 1) {
-        Ultrasonic_DelayUs(1);
-        pulseWidth++;
-        if (--timeout == 0) {
+        if (Ultrasonic_ElapsedTicks(startTicks, Ultrasonic_GetTicks()) > TIMEOUT_TICKS) {
             UART_SendString("[US] Timeout: ECHO stuck HIGH\r\n");
-            return 0;  // Timeout waiting for echo end
+            return 0;
         }
     }
     
-    return pulseWidth;
+    // Capture end time immediately when ECHO goes LOW
+    endTicks = Ultrasonic_GetTicks();
+    
+    // Calculate pulse width in ticks
+    pulseTicks = Ultrasonic_ElapsedTicks(startTicks, endTicks);
+    
+    // Convert to microseconds and return
+    return Ultrasonic_TicksToUs(pulseTicks);
 }
 
 uint32_t Ultrasonic_GetDistanceCm(void)

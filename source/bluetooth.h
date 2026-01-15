@@ -95,6 +95,12 @@ void Bluetooth_SendNumber(uint32_t num);
 void Bluetooth_SendSensorData(const char* label, uint32_t value, const char* unit);
 
 /**
+ * @brief Get number of bytes waiting in RX buffer
+ * @return Number of unread bytes
+ */
+uint8_t Bluetooth_GetBufferCount(void);
+
+/**
  * @brief Get current speed setting (0-100)
  * @return Speed percentage
  */

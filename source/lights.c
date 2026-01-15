@@ -27,7 +27,7 @@ void Lights_Off(void)
 
 void Lights_Auto(uint16_t ldrValue)
 {
-    const uint16_t threshold = 1500; // ajustare prag
+    const uint16_t threshold = 3000;
     
     // LDR Pull-Down configuration (3.3V → LDR → PTB0 → 10kΩ → GND):
     // Bright light → LDR low resistance → HIGH voltage → HIGH ADC value

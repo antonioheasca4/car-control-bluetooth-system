@@ -3,38 +3,98 @@
 #include "MKL25Z4.h"
 
 /**
- * Bluetooth Command Parser
+ * Bluetooth Command Parser with UART0 RX Interrupt
  * 
- * Uses UART0 which is connected to the Bluetooth module (HC-05/HC-06)
- * and also used for debug output via USB serial.
- * 
- * Command format: Single ASCII character
- * Response format: Text with \r\n line ending
+ * Uses UART0 RX interrupt to buffer incoming bytes.
+ * Commands are stored in a ring buffer and processed by main loop.
+ * This prevents losing commands during sensor reads.
  */
+
+// Ring buffer for received bytes
+#define RX_BUFFER_SIZE  32
+static volatile uint8_t rxBuffer[RX_BUFFER_SIZE];
+static volatile uint8_t rxHead = 0;  // Write index (ISR writes here)
+static volatile uint8_t rxTail = 0;  // Read index (main loop reads here)
 
 static uint8_t currentSpeed = 70;  // Default speed 70%
 
+/**
+ * @brief UART0 Interrupt Handler
+ * Called automatically when a byte is received on UART0
+ */
+void UART0_IRQHandler(void)
+{
+    // Check if RX data register is full
+    if (UART0->S1 & UART_S1_RDRF_MASK) {
+        uint8_t byte = UART0->D;  // Read byte (also clears RDRF flag)
+        
+        // Calculate next head position
+        uint8_t nextHead = (rxHead + 1) % RX_BUFFER_SIZE;
+        
+        // Only store if buffer not full
+        if (nextHead != rxTail) {
+            rxBuffer[rxHead] = byte;
+            rxHead = nextHead;
+        }
+        // If buffer is full, byte is dropped (overflow)
+    }
+    
+    // Clear any error flags
+    if (UART0->S1 & (UART_S1_OR_MASK | UART_S1_NF_MASK | UART_S1_FE_MASK | UART_S1_PF_MASK)) {
+        (void)UART0->D;  // Read to clear errors
+    }
+}
+
 void Bluetooth_Init(void)
 {
-    // UART0 is already initialized by BOARD_InitDebugConsole()
-    // Just reset speed to default
+    // Reset buffer indices
+    rxHead = 0;
+    rxTail = 0;
     currentSpeed = 70;
+    
+    // Enable UART0 RX interrupt
+    UART0->C2 |= UART_C2_RIE_MASK;  // Enable RX interrupt
+    
+    // Enable UART0 interrupt in NVIC
+    NVIC_SetPriority(UART0_IRQn, 2);  // Priority 2 (medium)
+    NVIC_EnableIRQ(UART0_IRQn);
 
-    UART_SendString("  Bluetooth init finish  \r\n");
+    UART_SendString("  Bluetooth init (RX interrupt enabled)\r\n");
 }
 
+/**
+ * @brief Check if data is available in the ring buffer
+ */
 bool Bluetooth_Available(void)
 {
-    // Check if UART0 receive data register is full
-    return (UART0->S1 & UART_S1_RDRF_MASK) != 0;
+    return (rxHead != rxTail);
 }
 
+/**
+ * @brief Get a byte from the ring buffer
+ * @return Received byte, or 0 if buffer empty
+ */
 uint8_t Bluetooth_GetByte(void)
 {
     if (!Bluetooth_Available()) {
         return 0;
     }
-    return UART0->D;
+    
+    uint8_t byte = rxBuffer[rxTail];
+    rxTail = (rxTail + 1) % RX_BUFFER_SIZE;
+    return byte;
+}
+
+/**
+ * @brief Get number of bytes in buffer
+ */
+uint8_t Bluetooth_GetBufferCount(void)
+{
+    if (rxHead >= rxTail) {
+        return rxHead - rxTail;
+    } else {
+        return RX_BUFFER_SIZE - rxTail + rxHead;
+    }
 }
 
 BluetoothCommand Bluetooth_GetCommand(void)

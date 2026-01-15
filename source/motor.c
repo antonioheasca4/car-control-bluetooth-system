@@ -59,15 +59,18 @@ static void Motor_InitPWM(void)
 {
     UART_SendString("  Motor_InitPWM() start\r\n");
     
-    // IMPORTANT: Set TPM clock source FIRST (before enabling clock gate)
-    // Clear existing TPMSRC bits and set to MCGFLLCLK (option 1)
-    SIM->SOPT2 = (SIM->SOPT2 & ~SIM_SOPT2_TPMSRC_MASK) | SIM_SOPT2_TPMSRC(1);
-    
-    // Then enable TPM0 clock gate (SIM->SCGC6 bit 24)
+    // Enable TPM0 clock gate FIRST
     SIM->SCGC6 |= SIM_SCGC6_TPM0_MASK;
     
-    uint32_t tpmClock = CLOCK_GetFreq(kCLOCK_McgFllClk);
-    UART_SendString("  TPM Clock: ");
+    // Set TPM clock source to PLLFLLCLK (which is MCGPLLCLK/2 = 48MHz in PEE mode)
+    // TPMSRC = 1 means use PLLFLLCLK (configured by PLLFLLSEL in clock_config.c)
+    // In BOARD_BootClockRUN, PLLFLLSEL is set to MCGPLLCLK, so we get 48MHz
+    SIM->SOPT2 = (SIM->SOPT2 & ~SIM_SOPT2_TPMSRC_MASK) | SIM_SOPT2_TPMSRC(1);
+    
+    // Use CLOCK_GetFreq with kCLOCK_PllFllSelClk to get the actual TPM source clock
+    // This returns the PLLFLLCLK frequency which is what TPM actually uses
+    uint32_t tpmClock = CLOCK_GetFreq(kCLOCK_PllFllSelClk);
+    UART_SendString("  TPM Clock (PLLFLLCLK): ");
     UART_SendNumber(tpmClock);
     UART_SendString(" Hz\r\n");
     

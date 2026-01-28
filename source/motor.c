@@ -50,7 +50,10 @@
 // PWM Configuration
 #define PWM_FREQUENCY       1000U   // 1kHz PWM frequency
 
-static uint8_t defaultSpeed = 70;   // Default speed 70%
+static uint8_t defaultSpeed = 100;   // Default speed 100%
+
+// Compensare pentru motorul drept care e mai lent
+#define RIGHT_MOTOR_BOOST  0 // +50% pentru motorul drept
 
 /**
  * @brief Initialize TPM0 for PWM output
@@ -104,21 +107,27 @@ static void Motor_InitPWM(void)
     UART_SendString("  Motor_InitPWM() done\r\n");
 }
 
-/**
- * @brief Set PWM duty cycle for a motor
- * @param channel TPM channel (kTPM_Chnl_1 for left, kTPM_Chnl_2 for right)
- * @param percent Duty cycle 0-100
- */
-static void Motor_SetPWM(tpm_chnl_t channel, uint8_t percent)
+static void Motor_SetBothPWM(uint8_t leftPercent, uint8_t rightPercent)
 {
-    if (percent > 100) percent = 100;
+    if (leftPercent > 100) leftPercent = 100;
+    if (rightPercent > 100) rightPercent = 100;
     
-    // Calculate duty cycle value based on MOD
     uint32_t mod = TPM0->MOD;
-    uint32_t duty = (mod * percent) / 100;
+    uint32_t leftDuty = (mod * leftPercent) / 100;
+    uint32_t rightDuty = (mod * rightPercent) / 100;
     
-    // Update channel value directly
-    TPM0->CONTROLS[channel].CnV = duty;
+    // Debug: print actual values
+    UART_SendString("[PWM] MOD=");
+    UART_SendNumber(mod);
+    UART_SendString(" L_duty=");
+    UART_SendNumber(leftDuty);
+    UART_SendString(" R_duty=");
+    UART_SendNumber(rightDuty);
+    UART_SendString("\r\n");
+    
+    // SWAPPED: Hardware wiring has channels reversed
+    TPM0->CONTROLS[1].CnV = rightDuty;  // TPM0_CH1 (PTA4) = Motor Right
+    TPM0->CONTROLS[2].CnV = leftDuty;   // TPM0_CH2 (PTA5) = Motor Left
 }
 
 void Motor_Init(void)
@@ -164,82 +173,106 @@ void Motor_Init(void)
     UART_SendString("  MOTORS init finish  \r\n");
 }
 
-void Motor_SetLeft(MotorDirection dir, uint8_t speed)
-{
-    switch (dir) {
-        case MOTOR_FORWARD:
-            GPIO_WritePinOutput(MOTOR_L_IN1_GPIO, MOTOR_L_IN1_PIN, 1);
-            GPIO_WritePinOutput(MOTOR_L_IN2_GPIO, MOTOR_L_IN2_PIN, 0);
-            break;
-        case MOTOR_BACKWARD:
-            GPIO_WritePinOutput(MOTOR_L_IN1_GPIO, MOTOR_L_IN1_PIN, 0);
-            GPIO_WritePinOutput(MOTOR_L_IN2_GPIO, MOTOR_L_IN2_PIN, 1);
-            break;
-        case MOTOR_STOP:
-        default:
-            GPIO_WritePinOutput(MOTOR_L_IN1_GPIO, MOTOR_L_IN1_PIN, 0);
-            GPIO_WritePinOutput(MOTOR_L_IN2_GPIO, MOTOR_L_IN2_PIN, 0);
-            speed = 0;
-            break;
-    }
-    Motor_SetPWM(kTPM_Chnl_1, speed);  // PTA4 = TPM0_CH1
-}
-
-void Motor_SetRight(MotorDirection dir, uint8_t speed)
-{
-    switch (dir) {
-        case MOTOR_FORWARD:
-            GPIO_WritePinOutput(MOTOR_R_IN1_GPIO, MOTOR_R_IN1_PIN, 1);
-            GPIO_WritePinOutput(MOTOR_R_IN2_GPIO, MOTOR_R_IN2_PIN, 0);
-            break;
-        case MOTOR_BACKWARD:
-            GPIO_WritePinOutput(MOTOR_R_IN1_GPIO, MOTOR_R_IN1_PIN, 0);
-            GPIO_WritePinOutput(MOTOR_R_IN2_GPIO, MOTOR_R_IN2_PIN, 1);
-            break;
-        case MOTOR_STOP:
-        default:
-            GPIO_WritePinOutput(MOTOR_R_IN1_GPIO, MOTOR_R_IN1_PIN, 0);
-            GPIO_WritePinOutput(MOTOR_R_IN2_GPIO, MOTOR_R_IN2_PIN, 0);
-            speed = 0;
-            break;
-    }
-    Motor_SetPWM(kTPM_Chnl_2, speed);
-}
-
 void Motor_Forward(uint8_t speed)
 {
-    Motor_SetLeft(MOTOR_FORWARD, speed);
-    Motor_SetRight(MOTOR_FORWARD, speed);
+    // Set directions: both motors FORWARD
+    // Left: IN1=1, IN2=0 → Forward
+    // Right: IN1=1, IN2=0 → Forward
+    GPIO_WritePinOutput(MOTOR_L_IN1_GPIO, MOTOR_L_IN1_PIN, 1);
+    GPIO_WritePinOutput(MOTOR_L_IN2_GPIO, MOTOR_L_IN2_PIN, 0);
+    GPIO_WritePinOutput(MOTOR_R_IN1_GPIO, MOTOR_R_IN1_PIN, 1);
+    GPIO_WritePinOutput(MOTOR_R_IN2_GPIO, MOTOR_R_IN2_PIN, 0);
+    
+    // Compensate right motor (it's slower)
+    uint8_t leftSpeed = (speed > RIGHT_MOTOR_BOOST) ? (speed - RIGHT_MOTOR_BOOST) : 0;
+    
+    UART_SendString("[FW] L=");
+    UART_SendNumber(leftSpeed);
+    UART_SendString(" R=");
+    UART_SendNumber(speed);
+    UART_SendString("\r\n");
+    
+    Motor_SetBothPWM(leftSpeed, speed);
 }
 
 void Motor_Backward(uint8_t speed)
 {
-    Motor_SetLeft(MOTOR_BACKWARD, speed);
-    Motor_SetRight(MOTOR_BACKWARD, speed);
+    // Set directions: both motors BACKWARD
+    // Left: IN1=0, IN2=1 → Backward
+    // Right: IN1=0, IN2=1 → Backward
+    GPIO_WritePinOutput(MOTOR_L_IN1_GPIO, MOTOR_L_IN1_PIN, 0);
+    GPIO_WritePinOutput(MOTOR_L_IN2_GPIO, MOTOR_L_IN2_PIN, 1);
+    GPIO_WritePinOutput(MOTOR_R_IN1_GPIO, MOTOR_R_IN1_PIN, 0);
+    GPIO_WritePinOutput(MOTOR_R_IN2_GPIO, MOTOR_R_IN2_PIN, 1);
+    
+    uint8_t leftSpeed = (speed > RIGHT_MOTOR_BOOST) ? (speed - RIGHT_MOTOR_BOOST) : 0;
+    
+    UART_SendString("[BW] L=");
+    UART_SendNumber(leftSpeed);
+    UART_SendString(" R=");
+    UART_SendNumber(speed);
+    UART_SendString("\r\n");
+    
+    Motor_SetBothPWM(leftSpeed, speed);
 }
 
 void Motor_TurnLeft(uint8_t speed)
 {
-    // Pivot turn: right motor forward, left motor backward (or stopped)
-    Motor_SetLeft(MOTOR_BACKWARD, speed / 2);
-    Motor_SetRight(MOTOR_FORWARD, speed);
+    // Pivot turn LEFT: left motor BACKWARD, right motor FORWARD
+    // Left: IN1=0, IN2=1 → Backward
+    // Right: IN1=1, IN2=0 → Forward
+    GPIO_WritePinOutput(MOTOR_L_IN1_GPIO, MOTOR_L_IN1_PIN, 0);
+    GPIO_WritePinOutput(MOTOR_L_IN2_GPIO, MOTOR_L_IN2_PIN, 1);
+    GPIO_WritePinOutput(MOTOR_R_IN1_GPIO, MOTOR_R_IN1_PIN, 1);
+    GPIO_WritePinOutput(MOTOR_R_IN2_GPIO, MOTOR_R_IN2_PIN, 0);
+    
+    uint8_t leftSpeed = (speed > RIGHT_MOTOR_BOOST) ? (speed - RIGHT_MOTOR_BOOST) : 0;
+    
+    UART_SendString("[PIVOT LEFT] L=");
+    UART_SendNumber(leftSpeed);
+    UART_SendString(" R=");
+    UART_SendNumber(speed);
+    UART_SendString("\r\n");
+    
+    Motor_SetBothPWM(leftSpeed, speed);
 }
 
 void Motor_TurnRight(uint8_t speed)
 {
-    // Pivot turn: left motor forward, right motor backward (or stopped)
-    Motor_SetLeft(MOTOR_FORWARD, speed);
-    Motor_SetRight(MOTOR_BACKWARD, speed / 2);
+    // Pivot turn RIGHT: left motor FORWARD, right motor BACKWARD
+    // Left: IN1=1, IN2=0 → Forward
+    // Right: IN1=0, IN2=1 → Backward
+    GPIO_WritePinOutput(MOTOR_L_IN1_GPIO, MOTOR_L_IN1_PIN, 1);
+    GPIO_WritePinOutput(MOTOR_L_IN2_GPIO, MOTOR_L_IN2_PIN, 0);
+    GPIO_WritePinOutput(MOTOR_R_IN1_GPIO, MOTOR_R_IN1_PIN, 0);
+    GPIO_WritePinOutput(MOTOR_R_IN2_GPIO, MOTOR_R_IN2_PIN, 1);
+    
+    uint8_t leftSpeed = (speed > RIGHT_MOTOR_BOOST) ? (speed - RIGHT_MOTOR_BOOST) : 0;
+    
+    UART_SendString("[PIVOT RIGHT] L=");
+    UART_SendNumber(leftSpeed);
+    UART_SendString(" R=");
+    UART_SendNumber(speed);
+    UART_SendString("\r\n");
+    
+    Motor_SetBothPWM(leftSpeed, speed);
 }
 
 void Motor_Stop(void)
 {
-    Motor_SetLeft(MOTOR_STOP, 0);
-    Motor_SetRight(MOTOR_STOP, 0);
+    // Set both motors to coast (IN1=0, IN2=0)
+    GPIO_WritePinOutput(MOTOR_L_IN1_GPIO, MOTOR_L_IN1_PIN, 0);
+    GPIO_WritePinOutput(MOTOR_L_IN2_GPIO, MOTOR_L_IN2_PIN, 0);
+    GPIO_WritePinOutput(MOTOR_R_IN1_GPIO, MOTOR_R_IN1_PIN, 0);
+    GPIO_WritePinOutput(MOTOR_R_IN2_GPIO, MOTOR_R_IN2_PIN, 0);
+    
+    UART_SendString("[STOP]\r\n");
+    
+    // Stop PWM on both
+    Motor_SetBothPWM(0, 0);
 }
 
-void Motor_SetDefaultSpeed(uint8_t speed)
+uint8_t Motor_GetDefaultSpeed(void)
 {
-    if (speed > 100) speed = 100;
-    defaultSpeed = speed;
+    return defaultSpeed;
 }

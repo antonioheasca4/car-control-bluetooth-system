@@ -1,5 +1,6 @@
 #include "bluetooth.h"
 #include "uart.h"
+#include "motor.h"
 #include "MKL25Z4.h"
 
 /**
@@ -16,7 +17,7 @@ static volatile uint8_t rxBuffer[RX_BUFFER_SIZE];
 static volatile uint8_t rxHead = 0;  // Write index (ISR writes here)
 static volatile uint8_t rxTail = 0;  // Read index (main loop reads here)
 
-static uint8_t currentSpeed = 70;  // Default speed 70%
+static uint8_t currentSpeed = 0;  // Will be set from Motor_GetDefaultSpeed()
 
 /**
  * @brief UART0 Interrupt Handler
@@ -50,7 +51,7 @@ void Bluetooth_Init(void)
     // Reset buffer indices
     rxHead = 0;
     rxTail = 0;
-    currentSpeed = 70;
+    currentSpeed = Motor_GetDefaultSpeed();  // Get default from motor.c
     
     // Enable UART0 RX interrupt
     UART0->C2 |= UART_C2_RIE_MASK;  // Enable RX interrupt

@@ -6,36 +6,36 @@
 #include "uart.h"
 
 /**
- * HC-SR04 Ultrasonic Distance Sensor
+ * Dual HC-SR04 Ultrasonic Distance Sensors
  * 
  * Working Principle:
- * 1. Send 10µs HIGH pulse on TRIG
+ * 1. Send 10µs HIGH pulse on TRIG (shared for both sensors)
  * 2. Sensor sends 8x 40kHz ultrasonic bursts
  * 3. ECHO pin goes HIGH
  * 4. When echo returns, ECHO pin goes LOW
  * 5. Distance = (ECHO pulse duration in µs) / 58
  * 
- * Speed of sound: 343 m/s = 0.0343 cm/µs
- * Round trip: 0.0343 / 2 = 0.01715 cm/µs
- * So: distance_cm = time_µs * 0.01715 ≈ time_µs / 58
- * 
  * TIMING IMPLEMENTATION:
  * Uses TPM2 as a free-running counter for precise timing.
  * TPM2 config: 48MHz / 32 (prescaler) = 1.5MHz = 0.667µs per tick
- * This provides hardware-based timing independent of interrupts.
  */
 
-// Pin definitions - Port C (J1 header)
+// Shared TRIG pin (PTC8)
 #define ULTRASONIC_TRIG_GPIO    GPIOC
 #define ULTRASONIC_TRIG_PORT    PORTC
 #define ULTRASONIC_TRIG_PIN     8U          // PTC8 (J1)
 
-#define ULTRASONIC_ECHO_GPIO    GPIOC
-#define ULTRASONIC_ECHO_PORT    PORTC
-#define ULTRASONIC_ECHO_PIN     9U          // PTC9 (J1)
+// FRONT sensor ECHO pin (PTC9)
+#define ULTRASONIC_ECHO_FRONT_GPIO    GPIOC
+#define ULTRASONIC_ECHO_FRONT_PORT    PORTC
+#define ULTRASONIC_ECHO_FRONT_PIN     9U    // PTC9 (J1)
+
+// REAR sensor ECHO pin (PTA12)
+#define ULTRASONIC_ECHO_REAR_GPIO     GPIOA
+#define ULTRASONIC_ECHO_REAR_PORT     PORTA
+#define ULTRASONIC_ECHO_REAR_PIN      12U   // PTA12
 
 // Timer configuration (TPM2 @ 48MHz with prescaler 32 = 1.5MHz)
-// 1 tick = 0.667µs, overflow at 65535 ticks = ~43.7ms
 #define TPM2_PRESCALER          5U          // PS=5 means divide by 32
 #define TPM2_FREQ_HZ            1500000U    // 48MHz / 32 = 1.5MHz
 #define TICKS_PER_US_NUM        3U          // 1.5 ticks per µs (numerator)
@@ -59,12 +59,11 @@ static inline uint16_t Ultrasonic_GetTicks(void)
  */
 static inline uint16_t Ultrasonic_ElapsedTicks(uint16_t start, uint16_t end)
 {
-    return (uint16_t)(end - start);  // Works correctly with 16-bit wrap-around
+    return (uint16_t)(end - start);
 }
 
 /**
  * @brief Convert ticks to microseconds
- * Formula: µs = ticks * 2 / 3 (since 1.5 ticks = 1µs)
  */
 static inline uint32_t Ultrasonic_TicksToUs(uint16_t ticks)
 {
@@ -73,7 +72,6 @@ static inline uint32_t Ultrasonic_TicksToUs(uint16_t ticks)
 
 /**
  * @brief Convert microseconds to ticks
- * Formula: ticks = µs * 3 / 2 (since 1µs = 1.5 ticks)
  */
 static inline uint16_t Ultrasonic_UsToTicks(uint32_t us)
 {
@@ -84,7 +82,6 @@ static inline uint16_t Ultrasonic_UsToTicks(uint32_t us)
 
 /**
  * @brief Microsecond delay using TPM2 hardware timer
- * Much more precise than NOP-based delay
  */
 static void Ultrasonic_DelayUs(uint32_t us)
 {
@@ -97,15 +94,19 @@ static void Ultrasonic_DelayUs(uint32_t us)
 }
 
 /**
- * @brief Read ECHO pin state
+ * @brief Read ECHO pin state for specified sensor
  */
-static inline uint8_t Ultrasonic_ReadEcho(void)
+static inline uint8_t Ultrasonic_ReadEcho(UltrasonicSensor_t sensor)
 {
-    return (ULTRASONIC_ECHO_GPIO->PDIR & (1U << ULTRASONIC_ECHO_PIN)) ? 1 : 0;
+    if (sensor == ULTRASONIC_FRONT) {
+        return (ULTRASONIC_ECHO_FRONT_GPIO->PDIR & (1U << ULTRASONIC_ECHO_FRONT_PIN)) ? 1 : 0;
+    } else {
+        return (ULTRASONIC_ECHO_REAR_GPIO->PDIR & (1U << ULTRASONIC_ECHO_REAR_PIN)) ? 1 : 0;
+    }
 }
 
 /**
- * @brief Set TRIG pin state
+ * @brief Set TRIG pin state (shared for both sensors)
  */
 static inline void Ultrasonic_SetTrig(uint8_t value)
 {
@@ -124,21 +125,15 @@ static void Ultrasonic_InitTimer(void)
     // Enable TPM2 clock gate
     SIM->SCGC6 |= SIM_SCGC6_TPM2_MASK;
     
-    // TPM clock source should already be set to MCGFLLCLK in motor.c
-    // But set it here too in case ultrasonic is initialized first
+    // TPM clock source
     SIM->SOPT2 = (SIM->SOPT2 & ~SIM_SOPT2_TPMSRC_MASK) | SIM_SOPT2_TPMSRC(1);
     
     // Stop TPM2 before configuring
     TPM2->SC = 0;
-    
-    // Reset counter
     TPM2->CNT = 0;
     
     // Set prescaler to divide by 32 (PS=5)
-    // 48MHz / 32 = 1.5MHz = 0.667µs per tick
     TPM2->SC = TPM_SC_PS(TPM2_PRESCALER);
-    
-    // Set MOD to maximum for free-running mode
     TPM2->MOD = 0xFFFF;
     
     // Start TPM2 with internal clock
@@ -159,42 +154,47 @@ void Ultrasonic_Init(void)
         .outputLogic = 0U
     };
     
-    // Initialize TPM2 timer first (needed for delays)
+    // Initialize TPM2 timer first
     Ultrasonic_InitTimer();
     
-    // Enable Port C clock (for PTC8 and PTC9)
-    CLOCK_EnableClock(kCLOCK_PortC);
+    // Enable Port clocks
+    CLOCK_EnableClock(kCLOCK_PortA);  // For PTA12 (rear ECHO)
+    CLOCK_EnableClock(kCLOCK_PortC);  // For PTC8 (TRIG) and PTC9 (front ECHO)
     
-    // Configure TRIG pin (PTC8) as output
+    // Configure shared TRIG pin (PTC8) as output
     PORT_SetPinMux(ULTRASONIC_TRIG_PORT, ULTRASONIC_TRIG_PIN, kPORT_MuxAsGpio);
     GPIO_PinInit(ULTRASONIC_TRIG_GPIO, ULTRASONIC_TRIG_PIN, &trigConfig);
     
-    // Configure ECHO pin (PTC9) as input
-    PORT_SetPinMux(ULTRASONIC_ECHO_PORT, ULTRASONIC_ECHO_PIN, kPORT_MuxAsGpio);
-    GPIO_PinInit(ULTRASONIC_ECHO_GPIO, ULTRASONIC_ECHO_PIN, &echoConfig);
+    // Configure FRONT ECHO pin (PTC9) as input
+    PORT_SetPinMux(ULTRASONIC_ECHO_FRONT_PORT, ULTRASONIC_ECHO_FRONT_PIN, kPORT_MuxAsGpio);
+    GPIO_PinInit(ULTRASONIC_ECHO_FRONT_GPIO, ULTRASONIC_ECHO_FRONT_PIN, &echoConfig);
+    
+    // Configure REAR ECHO pin (PTA12) as input
+    PORT_SetPinMux(ULTRASONIC_ECHO_REAR_PORT, ULTRASONIC_ECHO_REAR_PIN, kPORT_MuxAsGpio);
+    GPIO_PinInit(ULTRASONIC_ECHO_REAR_GPIO, ULTRASONIC_ECHO_REAR_PIN, &echoConfig);
     
     // Ensure TRIG starts LOW
     Ultrasonic_SetTrig(0);
     
-    // Wait for sensor to stabilize (50ms)
+    // Wait for sensors to stabilize (50ms)
     Ultrasonic_DelayUs(50000);
 
-    UART_SendString("  ULTRASONIC init finish\r\n");
+    UART_SendString("  ULTRASONIC (DUAL) init finish\r\n");
+    UART_SendString("    FRONT: TRIG=PTC8, ECHO=PTC9\r\n");
+    UART_SendString("    REAR:  TRIG=PTC8, ECHO=PTA12\r\n");
 }
 
-uint32_t Ultrasonic_GetPulseUs(void)
+uint32_t Ultrasonic_GetPulseUs(UltrasonicSensor_t sensor)
 {
     uint16_t startTicks, endTicks, waitStart;
     uint16_t pulseTicks;
     
-    // Debug: check initial ECHO state
-    if (Ultrasonic_ReadEcho() == 1) {
-        UART_SendString("[US] Warning: ECHO is HIGH before trigger!\r\n");
+    // Check initial ECHO state
+    if (Ultrasonic_ReadEcho(sensor) == 1) {
         // Wait for ECHO to go LOW with timeout
         waitStart = Ultrasonic_GetTicks();
-        while (Ultrasonic_ReadEcho() == 1) {
+        while (Ultrasonic_ReadEcho(sensor) == 1) {
             if (Ultrasonic_ElapsedTicks(waitStart, Ultrasonic_GetTicks()) > SHORT_TIMEOUT_TICKS) {
-                UART_SendString("[US] Error: ECHO stuck HIGH, cannot measure\r\n");
                 return 0;
             }
         }
@@ -204,53 +204,48 @@ uint32_t Ultrasonic_GetPulseUs(void)
     Ultrasonic_SetTrig(0);
     Ultrasonic_DelayUs(2);
     
-    // Send 10µs trigger pulse (hardware-timed, precise)
+    // Send 10µs trigger pulse
     Ultrasonic_SetTrig(1);
     Ultrasonic_DelayUs(10);
     Ultrasonic_SetTrig(0);
     
     // Wait for ECHO to go HIGH (with timeout)
     waitStart = Ultrasonic_GetTicks();
-    while (Ultrasonic_ReadEcho() == 0) {
+    while (Ultrasonic_ReadEcho(sensor) == 0) {
         if (Ultrasonic_ElapsedTicks(waitStart, Ultrasonic_GetTicks()) > SHORT_TIMEOUT_TICKS) {
-            UART_SendString("[US] Timeout: ECHO never went HIGH\r\n");
             return 0;
         }
     }
     
-    // Capture start time immediately when ECHO goes HIGH
+    // Capture start time
     startTicks = Ultrasonic_GetTicks();
     
-    // Wait for ECHO to go LOW (measure pulse duration)
-    while (Ultrasonic_ReadEcho() == 1) {
+    // Wait for ECHO to go LOW
+    while (Ultrasonic_ReadEcho(sensor) == 1) {
         if (Ultrasonic_ElapsedTicks(startTicks, Ultrasonic_GetTicks()) > TIMEOUT_TICKS) {
-            UART_SendString("[US] Timeout: ECHO stuck HIGH\r\n");
             return 0;
         }
     }
     
-    // Capture end time immediately when ECHO goes LOW
+    // Capture end time
     endTicks = Ultrasonic_GetTicks();
     
-    // Calculate pulse width in ticks
+    // Calculate pulse width
     pulseTicks = Ultrasonic_ElapsedTicks(startTicks, endTicks);
     
-    // Convert to microseconds and return
     return Ultrasonic_TicksToUs(pulseTicks);
 }
 
-uint32_t Ultrasonic_GetDistanceCm(void)
+uint32_t Ultrasonic_GetDistanceCm_Sensor(UltrasonicSensor_t sensor)
 {
-    uint32_t pulseUs = Ultrasonic_GetPulseUs();
+    uint32_t pulseUs = Ultrasonic_GetPulseUs(sensor);
     
     if (pulseUs == 0) {
-        return ULTRASONIC_TIMEOUT_CM;  // Error/timeout
+        return ULTRASONIC_TIMEOUT_CM;
     }
     
-    // Distance = pulse_µs / 58
     uint32_t distanceCm = pulseUs / 58;
     
-    // Clamp to valid range
     if (distanceCm < ULTRASONIC_MIN_DISTANCE_CM) {
         return ULTRASONIC_MIN_DISTANCE_CM;
     }
@@ -261,14 +256,34 @@ uint32_t Ultrasonic_GetDistanceCm(void)
     return distanceCm;
 }
 
+// Backward compatible - reads FRONT sensor
+uint32_t Ultrasonic_GetDistanceCm(void)
+{
+    return Ultrasonic_GetDistanceCm_Sensor(ULTRASONIC_FRONT);
+}
+
+// New function for REAR sensor
+uint32_t Ultrasonic_GetRearDistanceCm(void)
+{
+    return Ultrasonic_GetDistanceCm_Sensor(ULTRASONIC_REAR);
+}
+
 bool Ultrasonic_ObstacleDetected(uint32_t thresholdCm)
 {
     uint32_t distance = Ultrasonic_GetDistanceCm();
     
-    // If we got a valid reading within threshold, obstacle detected
     if (distance < ULTRASONIC_TIMEOUT_CM && distance <= thresholdCm) {
         return true;
     }
+    return false;
+}
+
+bool Ultrasonic_RearObstacleDetected(uint32_t thresholdCm)
+{
+    uint32_t distance = Ultrasonic_GetRearDistanceCm();
     
+    if (distance < ULTRASONIC_TIMEOUT_CM && distance <= thresholdCm) {
+        return true;
+    }
     return false;
 }

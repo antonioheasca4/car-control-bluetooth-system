@@ -93,4 +93,10 @@ void FSM_StopCar(void);
  */
 void FSM_SendObstacleAlert(uint32_t distanceCm);
 
+/**
+ * @brief Update FSM state machine
+ * Must be called from main loop to handle non-blocking turn completion
+ */
+void FSM_Update(void);
+
 #endif // CAR_FSM_H

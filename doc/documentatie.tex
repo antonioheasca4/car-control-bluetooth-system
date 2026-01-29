@@ -1,0 +1,556 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+% Pachete necesare
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage[utf8]{inputenc} % Suport pentru diacritice
+\usepackage[romanian]{babel} % Setări de limbă pentru română
+\usepackage{float}
+\usepackage{listings} % Pentru formatarea codului
+
+% Configurare listings pentru cod
+\lstset{
+    basicstyle=\footnotesize\ttfamily,  % Font mai mic și monospaced
+    backgroundcolor=\color{gray!10},     % Fundal gri deschis
+    frame=single,                        % Border în jurul codului
+    frameround=tttt,                     % Colțuri rotunjite
+    breaklines=true,                     % Line wrapping automat
+    captionpos=b,                        % Caption jos
+    numbers=none,                        % Fără numere de linie
+    xleftmargin=10pt,                    % Margin stânga
+    xrightmargin=10pt,                   % Margin dreapta
+    aboveskip=10pt,                      % Spațiu deasupra
+    belowskip=10pt                       % Spațiu dedesubt
+}
+
+% Definiție pentru BibTeX
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{Sistem Inteligent de Control pentru Vehicul Robotizat prin Comunicație Bluetooth cu Senzori de Mediu și Evitare Obstacole}
+
+\author{
+    \begin{tabular}{cc}
+        \parbox{0.45\linewidth}{\centering
+            \textbf{Heașcă Antonio-Ciprian}\\
+            \textit{Facultatea de Sisteme Informatice şi Securitate Cibernetică} \\
+            \textit{Departamentul de Calculatoare și Securitate Cibernetică}\\
+            \textit{Academia Tehnică Militară ``FERDINAND I''}\\
+              București, România \\
+            \textit{antonio.heasca@mta.ro}}
+        &
+        \parbox{0.45\linewidth}{\centering
+            \textbf{Sîrbu Bianca-Georgiana}\\
+            \textit{Facultatea de Sisteme Informatice şi Securitate Cibernetică} \\
+            \textit{Departamentul de Calculatoare și Securitate Cibernetică}\\
+            \textit{Academia Tehnică Militară ``FERDINAND I''}\\
+              București, România \\
+            \textit{bianca.sirbu@mta.ro}}
+    \end{tabular}
+
+}
+
+\maketitle
+
+\begin{abstract}
+Acest proiect prezintă proiectarea și implementarea unui sistem inteligent de control pentru un vehicul robotizat, având ca nucleu de procesare platforma FRDM-KL25Z bazată pe arhitectura ARM Cortex-M0+. Sistemul integrează un ansamblu complet de senzori și actuatori: doi senzori ultrasonici HC-SR04 pentru detecția și evitarea obstacolelor (frontal și posterior), senzor DHT11 pentru monitorizarea temperaturii și umidității mediului ambiant, fotorezistor LDR pentru controlul automat al iluminării, driver L293D pentru comanda motoarelor DC, și modul Bluetooth HC-05 pentru comunicația wireless bidirectională cu o aplicație mobilă. Arhitectura modulară permite funcționarea autonomă (evitare obstacole) și controlul manual remote prin comenzi Bluetooth. Lucrarea detaliază integrarea hardware, implementarea firmware-ului modular, protocolul de comunicație Bluetooth, și strategiile de control implementate pentru navigare autonomă și asistată.
+\end{abstract}
+
+\begin{IEEEkeywords}
+FRDM-KL25Z, ARM Cortex-M0+, Bluetooth, HC-SR04, DHT11, L293D, Vehicul Robotizat, Sistem Embedded, IoT.
+\end{IEEEkeywords}
+
+\section{Introducere}
+Dezvoltarea vehiculelor robotizate autonome și semi-autonome reprezintă un domeniu în continuă expansiune, cu aplicații în robotică mobilă, educație tehnică, și prototipare rapidă. Sistemele embedded moderne, prin intermediul microcontrolerelor performante și al senzorilor sofisticați, permit realizarea unor platforme robotice inteligente capabile să perceapă mediul înconjurător și să răspundă adaptiv la schimbări.
+
+Proiectul de față își propune realizarea unui sistem complet de control pentru un vehicul robotizat inteligent, având la bază microcontrolerul MKL25Z128VLK4 din familia Kinetis (arhitectură ARM Cortex-M0+) integrat pe placa de dezvoltare FRDM-KL25Z. Alegerea acestei platforme este motivată de raportul optim performanță/consum, disponibilitatea interfețelor periferice (UART, GPIO, ADC, TPM), și ecosistemul software robust oferit de SDK-ul NXP MCUXpresso.
+
+Sistemul implementează două moduri de operare complementare:
+\begin{enumerate}
+    \item \textbf{Mod Manual (Teleoperare):} Control remote prin comenzi Bluetooth trimise de pe aplicație mobilă, permițând navigarea precisă în spații restrânse.
+    \item \textbf{Mod Asist/Autonom:} Detecție automată a obstacolelor prin senzorii ultrasonici (frontal și posterior) și oprire preventivă, asigurând siguranța manevrelor.
+\end{enumerate}
+
+Obiectivele tehnice ale proiectului sunt:
+\begin{itemize}
+    \item \textbf{Integrare Multi-Senzorială:} Implementarea unui ansamblu de senzori pentru percepția mediului: doi HC-SR04 (distanță față/spate), DHT11 (temperatură/umiditate), LDR (lumină ambientală).
+    \item \textbf{Control Motorizare:} Controlul precis al vitezei și direcției prin modulație PWM (Pulse Width Modulation) către driver-ul L293D, asigurând manevrabilitate (mișcare înainte, înapoi, rotire stânga/dreapta).
+    \item \textbf{Comunicație Wireless Bidirectională:} Protocol Bluetooth simplu și eficient pentru transmiterea comenzilor de control și recepționarea datelor telemetrice (temperatură, distanță).
+    \item \textbf{Iluminare Adaptivă:} Sistem automat de aprindere a farurilor LED bazat pe condițiile de luminozitate detectate de fotorezistorul LDR.
+    \item \textbf{Arhitectură Modulară:} Structură software cu separarea clară a driverelor hardware pentru facilitarea testării, debugging-ului și extinderii funcționalităților.
+\end{itemize}
+
+\section{Arhitectura și Designul Sistemului}
+
+Sistemul este conceput modular, organizat în straturi logice distincte: stratul de achiziție (senzori), stratul de procesare și decizie (microcontroller), stratul de actuare (motoare, LED-uri), și stratul de comunicație (Bluetooth). Această arhitectură facilitează testarea independentă a fiecărui modul și permite extinderea ulterioară a funcționalităților.
+
+\subsection{Arhitectura Hardware}
+Unitatea centrală de procesare este placa de dezvoltare \textbf{FRDM-KL25Z}, echipată cu microcontrolerul MKL25Z128VLK4 (ARM Cortex-M0+, 48 MHz, 128 KB Flash, 16 KB RAM). Interconectarea componentelor s-a realizat utilizând breadboard-uri pentru prototipare rapidă, facilitând modificările hardware în faza de dezvoltare.
+
+\subsubsection{Maparea Pinilor și Interfețe}
+Toate conexiunile hardware au fost realizate prin header-ele J1 și J10 ale plăcii FRDM-KL25Z. Maparea completă a pinilor este prezentată în Tabelul~\ref{tab:pinout}.
+
+\begin{table}[htbp]
+\caption{Maparea Pinilor Hardware}
+\begin{center}
+\begin{tabular}{|l|c|c|l|}
+\hline
+\textbf{Componentă} & \textbf{Pin} & \textbf{Funcție} & \textbf{Configurație} \\
+\hline
+\multicolumn{4}{|c|}{\textit{Senzori de Intrare}} \\
+\hline
+LDR & PTB0 & ADC0\_SE8 & Divizor 10kΩ \\
+DHT11 & PTD4 & GPIO & 1-Wire \\
+HC-SR04 TRIG (comun) & PTC8 & GPIO-Out & Puls 10µs \\
+HC-SR04 ECHO FRONT & PTC9 & GPIO-In & Divizor 5V→3.3V \\
+HC-SR04 ECHO REAR & PTA12 & GPIO-In & Divizor 5V→3.3V \\
+\hline
+\multicolumn{4}{|c|}{\textit{Driver Motoare L293D}} \\
+\hline
+Motor Stâng IN1/IN2 & PTB1/PTB2 & GPIO & H-Bridge \\
+Motor Stâng EN & PTA4 & TPM0\_CH1 & PWM 1kHz \\
+Motor Drept IN1/IN2 & PTB3/PTC2 & GPIO & H-Bridge \\
+Motor Drept EN & PTA5 & TPM0\_CH2 & PWM 1kHz \\
+\hline
+\multicolumn{4}{|c|}{\textit{Comunicație și Actuatori}} \\
+\hline
+LED Iluminare & PTC1 & GPIO-Out & Faruri \\
+Bluetooth HC-05/06 & PTA1/PTA2 & UART0 & 9600 baud \\
+\hline
+\end{tabular}
+\label{tab:pinout}
+\end{center}
+\end{table}
+
+\subsubsection{Descrierea Componentelor Hardware}
+Componentele majore sunt detaliate mai jos:
+
+\begin{enumerate}
+    \item \textbf{Subsistemul de Alimentare:} 
+    Sistemul necesită două niveluri de tensiune: 5V pentru motoare, driver L293D, și senzorii HC-SR04, respectiv 3.3V pentru microcontroller și senzorul DHT11. Alimentarea se realizează fie prin USB (dezvoltare), fie prin baterii externe (operare autonomă). Driver-ul L293D primește alimentare separată (VCC2) pentru izolarea zgomotului electric generat de motoare de secțiunea digitală sensibilă.
+    
+    \item \textbf{Senzorii Ultrasonici HC-SR04 (FRONT și REAR):} 
+    Detectarea obstacolelor se face prin măsurarea distanței ultrasonice cu doi senzori: unul frontal pentru mișcarea înainte și unul posterior pentru mișcarea înapoi. Ambii senzori HC-SR04 operează la 40 kHz și oferă o precizie de $\pm$3mm în intervalul 2-400 cm. Pinul TRIGGER este partajat (PTC8) pentru ambii senzori, inițiind măsurătoarea printr-un puls de 10µs. Pinii ECHO sunt separați: PTC9 pentru senzorul frontal și PTA12 pentru cel posterior. \textbf{Important:} Pinii ECHO generează 5V, necesitând divizori rezistivi (1kΩ-2kΩ) pentru protecția pinilor GPIO (3.3V). Timing-ul precis este asigurat de timer-ul TPM2 configurat la 1.5 MHz.
+    
+    \item \textbf{Senzorul de Mediu DHT11:} 
+    Monitorizarea temperaturii (0-50°C, ±2°C) și umidității (20-90\%RH, ±5\%) se realizează prin senzorul DHT11 conectat pe pinul PTD4 (GPIO bidirectional). Comunicația utilizează un protocol proprietar 1-Wire cu timing critic implementat prin bit-banging, folosind TPM1 configurat la 3 MHz pentru precizie. Ciclul de citire este limitat la 1 Hz (o citire per secundă) conform specificațiilor senzorului. În implementarea curentă, DHT11 este citit doar la cerere prin comenzile Bluetooth 'T' (temperatură), 'H' (umiditate), sau 'I' (informații complete), evitând astfel suprasolicitarea senzorului și întârzierile în bucla principală. Protocolul include validare checksum și gestionarea codurilor de eroare.
+    
+    \item \textbf{Fotorezistor LDR și Control Iluminare:} 
+    Detectarea nivelului de lumină ambientală se face prin citirea analogică (ADC0\_SE8 pe pinul PTB0) a fotorezistorului LDR conectat în configurație divizor rezistiv cu rezistență pull-down de 10kΩ. Schema de conexiune:
+    \[
+    V_{ADC} = \frac{R_{pulldown}}{R_{LDR} + R_{pulldown}} \cdot V_{CC}
+    \]
+    unde $R_{pulldown} = 10k\Omega$ și $V_{CC} = 3.3V$. În condiții de lumină normală, $R_{LDR} \approx 1-10k\Omega$ (ADC $>$  3000), iar în întuneric $R_{LDR} > 100k\Omega$ (ADC $<$  3000). Când valoarea ADC scade sub pragul de 3000 (aproximativ 73\% din scala ADC de 12-bit), indicând mediu întunecat, LED-ul de iluminare (conectat pe PTC1) se aprinde automat. Această funcționalitate poate fi dezactivată prin comandă Bluetooth ('M' toggle auto-mode, 'O' forțat ON, 'P' forțat OFF).
+    
+    \item \textbf{Subsistemul de Propulsie (Motoare DC + Driver L293D):} 
+    Mișcarea vehiculului este asigurată de două motoare DC comandate diferențial prin driver-ul L293D (H-Bridge dublu). Controlul vitezei se face prin PWM (TPM0\_CH1 și TPM0\_CH2) cu frecvență de 1 kHz, iar direcția prin semnalele digitale IN1-IN4. Configurația permite:
+    \begin{itemize}
+    \item Mișcare înainte/înapoi (ambele motoare sincronizate)
+    \item Rotire pe loc stânga/dreapta $90^\circ$ (motoare în direcții opuse)
+    \item Control variabil al vitezei (0-100\%)
+\end{itemize}
+    
+    \item \textbf{Modul de Comunicație Bluetooth HC-05:} 
+    Interfața wireless se realizează prin modulul Bluetooth SPP (Serial Port Profile) conectat la UART0 (PTA1-RX, PTA2-TX, 9600 baud). Modulul funcționează în mod slave, acceptând conexiuni de la aplicația mobilă. Protocolul de comunicație este bazat pe comenzi single-character pentru latență minimă și simplitate. Detalii complete despre protocolul Bluetooth sunt prezentate în Secțiunea~\ref{sec:bluetooth}.
+    
+
+\end{enumerate}
+
+Figura~\ref{fig:block_diagram} prezintă arhitectura hardware a sistemului, ilustrând conexiunile dintre microcontrolerul FRDM-KL25Z și componentele periferice. Diagrama evidențiază cele trei straturi funcționale: stratul de senzori (HC-SR04 FRONT/REAR, DHT11, LDR), stratul de actuare (motoare DC prin L293D, LED-uri), și stratul de comunicație (modulul Bluetooth HC-05). Săgețile indică fluxul de date și semnale de control între componente.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.95\linewidth]{figures/image.png} 
+    \caption{Arhitectura Hardware a Sistemului.}
+    \label{fig:block_diagram}
+\end{figure}
+
+
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.6\linewidth]{figures/diagrama_de_flux.png} 
+    \caption{Diagrama de Flux a Aplicației Principale.}
+    \label{fig:flow_diagram}
+\end{figure}
+
+\subsection{Design Software și Flux de Date}
+
+Firmware-ul este structurat modular, cu drivere dedicate pentru fiecare componentă hardware. Arhitectura software urmează principiile embedded systems: separarea hardware abstraction layer (HAL) de logica aplicației, evitarea delay-urilor blocking pentru responsiveness ridicat, și gestionarea priorităților taskurilor.
+
+Figura~\ref{fig:flow_diagram} prezintă diagrama de flux a aplicației principale, ilustrând bucla de control (superloop) care coordonează funcționarea sistemului. Fluxul începe cu inițializarea modulelor hardware, urmată de bucla infinită care execută secvențial: verificarea comenzilor Bluetooth, citirea senzorilor ultrasonici pentru detecția obstacolelor, procesarea evenimentelor prin FSM (Finite State Machine), actualizarea stării motoarelor, și controlul automat al iluminării bazat pe valoarea LDR. Diagrama evidențiază punctele de decizie pentru detecția obstacolelor și tranziția între stările FSM.
+
+Bucla principală (superloop) execută secvențial următoarele etape cu o frecvență de aproximativ 50 ms per ciclu:
+
+\begin{enumerate}
+    \item \textbf{Verificare Comenzi Bluetooth:} Polling non-blocking pe buffer-ul UART0 pentru detectarea comenzilor primite de la aplicația mobilă. Parser-ul identifică caracterul comandă și extrage parametrii opționali (ex: viteză). Comenzile sunt executate imediat:
+    \begin{itemize}
+        \item Mișcare: 'F' (Forward), 'B' (Backward), 'L' (Left), 'R' (Right), 'S' (Stop)
+        \item Iluminare: 'O' (ON), 'P' (Power off), 'M' (Mode toggle)
+        \item Telemetrie: 'T' (Temp), 'H' (Humidity), 'U' (Ultrasonic), 'I' (Info all)
+        \item Viteză: '1'-'9' (10\%-90\%)
+    \end{itemize}
+    
+    \item \textbf{Achiziție Senzori (Ciclul de 50ms):} 
+    \begin{itemize}
+        \item \textbf{HC-SR04 FRONT/REAR:} Măsurare distanță diferențiată în funcție de direcția de mișcare. Când vehiculul se deplasează înainte, se citește senzorul frontal; când se deplasează înapoi, se citește senzorul posterior. Algoritmul de măsurare:
+        \begin{enumerate}
+            \item Generare puls TRIGGER 10µs (PTC8 - partajat)
+            \item Măsurare durată puls ECHO (PTC9 frontal / PTA12 posterior)
+            \item Calcul: $d_{cm} = t_{\mu s} / 58$
+            \item Timeout 30ms pentru robustețe
+        \end{enumerate}
+        \item \textbf{DHT11:} Citire la cerere (prin comanda 'I') conform limitării hardware 1 Hz. Protocol 1-Wire cu bit-banging și validare checksum.
+        \item \textbf{LDR:} Conversie ADC continuă (12-bit, 0-4095) pentru nivel lumină ambientală. 
+        Prag de comutare: 3000 (aproximativ 73\% din scala ADC). 
+        Valoare tipică: condiții luminoase $>$ 3000, condiții întunecate $<$ 3000.
+    \end{itemize}
+    
+    \item \textbf{Logică de Decizie și Control Autonom:} Sistemul implementează două mecanisme autonome de siguranță și confort:
+    \begin{itemize}
+        \item \textit{Evitare Obstacole Bidirecțională:} 
+        \begin{itemize}
+            \item \textbf{FORWARD:} Când distanța măsurată de HC-SR04 FRONT scade sub pragul de siguranță de 20 cm și vehiculul se deplasează înainte, controllerul activează oprirea automată.
+            \item \textbf{BACKWARD:} Când distanța măsurată de HC-SR04 REAR scade sub 20 cm și vehiculul se deplasează înapoi, se activează oprirea automată.
+        \end{itemize}
+        Sistemul trimite o notificare prin Bluetooth către aplicația mobilă (ex: \texttt{"!! OBSTACLE at 15 cm - STOPPED !!"}) și setează starea FSM la IDLE. Vehiculul rămâne oprit până la primirea unei noi comenzi de navigație.
+        
+        \item \textit{Iluminare Adaptivă:} În modul automat (implicit activat, dezactivabil prin comandă 'M'), sistemul monitorizează continuu valoarea ADC a fotorezistorului LDR. Când nivelul de lumină scade sub pragul configurat (indicând condiții de vizibilitate redusă), LED-ul de iluminare este activat automat pentru îmbunătățirea vizibilității. Sistemul revine la starea de standby când condițiile de lumină revin la normal.
+    \end{itemize}
+    
+    \item \textbf{Actuare:} 
+    \begin{itemize}
+        \item Motoare: Aplicare PWM (1 kHz, duty cycle 0-100\%) și setare direcție prin pinii IN1-IN4 ai L293D.
+        \item LED-uri: Control GPIO direct (HIGH = ON, LOW = OFF).
+        \item State tracking: Menținere stare curentă (direcție, viteză, mod iluminare) pentru consistență.
+    \end{itemize}
+    
+    \item \textbf{Telemetrie (La Cerere):} Răspuns la comenzile de interogare:
+    \begin{itemize}
+        \item 'T' → \texttt{"TEMP:24C"}
+        \item 'H' → \texttt{"HUM:67"}
+        \item 'U' → \texttt{"DIST:35cm"}
+        \item 'I' → Informații complete (vezi Secțiunea~\ref{sec:bluetooth})
+    \end{itemize}
+    Format text ales pentru compatibilitate cu terminale seriale și aplicații mobile simple.
+\end{enumerate}
+
+
+\subsection{Arhitectura FSM (Finite State Machine)}
+Sistemul implementează o mașină cu stări finite pentru controlul mișcării vehiculului, asigurând tranziții clare între modurile de operare și gestionarea consistentă a comenzilor. FSM-ul este implementat în modulele \texttt{car\_fsm.c/h} și oferă o separare strictă între logica de control a motoarelor și procesarea comenzilor, eliminând necesitatea flag-urilor globale de stare.
+
+\subsubsection{Definirea Stărilor și Evenimentelor}
+Arhitectura definește 5 stări discrete pentru vehicul și 8 tipuri de evenimente care pot declanșa tranziții:
+
+\begin{lstlisting}[language=C]
+// FSM States
+typedef enum {
+    STATE_IDLE = 0,      // Stopped, waiting
+    STATE_FORWARD,       // Moving forward
+    STATE_BACKWARD,      // Moving backward
+    STATE_LEFT,          // Turning left
+    STATE_RIGHT          // Turning right
+} CarState_t;
+
+// FSM Events
+typedef enum {
+    EVENT_NONE = 0,
+    EVENT_CMD_FORWARD,   // Bluetooth: F/W
+    EVENT_CMD_BACKWARD,  // Bluetooth: B/X
+    EVENT_CMD_LEFT,      // Bluetooth: L/A
+    EVENT_CMD_RIGHT,     // Bluetooth: R/D
+    EVENT_CMD_STOP,      // Bluetooth: S
+    EVENT_OBSTACLE,      // Distance < 20cm
+    EVENT_OBSTACLE_CLEAR
+} CarEvent_t;
+\end{lstlisting}
+
+\subsubsection{Logica de Tranziție}
+Procesarea evenimentelor urmează pattern-ul clasic table-driven FSM, cu handler-e specializate pentru fiecare stare:
+
+\begin{lstlisting}[language=C]
+void FSM_ProcessEvent(CarEvent_t event)
+{
+    switch (g_currentState) {
+        case STATE_IDLE:
+            FSM_HandleIdleState(event);
+            break;
+        case STATE_FORWARD:
+            FSM_HandleForwardState(event);
+            break;
+        // ... similar for other states}}
+\end{lstlisting}
+
+Caracteristica critică a stărilor \texttt{STATE\_FORWARD} și \texttt{STATE\_BACKWARD} este detecția automată de obstacole. Când vehiculul se deplasează înainte și senzorul ultrasonic frontal raportează o distanță sub 20 cm, sau când se deplasează înapoi și senzorul posterior raportează o distanță sub 20 cm, se generează automat \texttt{EVENT\_OBSTACLE} care forțează tranziția către \texttt{STATE\_IDLE}:
+
+\begin{lstlisting}[language=C]
+void FSM_HandleForwardState(CarEvent_t event)
+{
+    switch (event) {
+        case EVENT_OBSTACLE:
+            // Stop immediately and alert
+            FSM_EnterState(STATE_IDLE);
+            Bluetooth_SendString(
+                "!! OBSTACLE - STOPPED !!\r\n");
+            break;
+        // ... handle other events
+    }
+}
+\end{lstlisting}
+
+\subsubsection{Separarea Responsabilităților}
+FSM-ul gestionează exclusiv \textit{mișcarea} vehiculului. Funcționalități independente (iluminare adaptivă, telemetrie) operează în paralel fără a interfera cu stările FSM. În bucla principală, conversia comenzilor Bluetooth în evenimente se face explicit:
+
+\begin{lstlisting}[language=C]
+BluetoothCommand cmd = Bluetooth_GetCommand();
+CarEvent_t event = ConvertBluetoothToEvent(cmd);
+
+// Motion commands -> FSM events
+if (event != EVENT_NONE) {
+    FSM_ProcessEvent(event);
+}
+
+// Non-motion commands (lights, sensors)
+// processed separately
+ProcessNonMovementCommand(cmd);
+\end{lstlisting}
+
+Această arhitectură asigură:
+\begin{itemize}
+    \item \textbf{Predictibilitate}: Vehiculul va fi întotdeauna într-o stare bine definită
+    \item \textbf{Testabilitate}: Fiecare stare poate fi testată izolat
+    \item \textbf{Extensibilitate}: Stări noi sau evenimente pot fi adăugate fără a modifica logica existentă
+    \item \textbf{Siguranță}: Detecția obstacolelor este integrată la nivel de FSM, nu poate fi ocolită
+\end{itemize}
+
+\subsection{Arhitectura Software Modulară}
+Firmware-ul este structurat pe baza principiului separării responsabilităților (separation of concerns), fiecare componentă hardware fiind încapsulată într-un modul software independent. Această arhitectură facilitează testarea, mentenanța și extinderea sistemului.
+
+\subsubsection{Module de Abstracție Hardware}
+Layerul HAL (Hardware Abstraction Layer) conține următoarele module:
+
+\begin{itemize}
+    \item \texttt{motor.c/h}: Implementează controlul diferențial al motoarelor DC prin driver-ul L293D. Modulul oferă funcții de nivel înalt (Forward, Backward, TurnLeft, TurnRight, Stop) și funcții de nivel jos pentru controlul independent al fiecărui motor. Viteza este controlată prin modulație PWM la 1 kHz.
+    
+    \item \texttt{bluetooth.c/h}: Gestionează comunicația serială prin UART0 la 9600 baud 
+    cu implementare interrupt-driven pentru recepție. Ring buffer-ul circular 
+    de 32 bytes previne pierderea comenzilor în timpul operațiilor blocking 
+    (DHT11, ultrasonic). Parser-ul implementat recunoaște comenzi 
+    single-character și oferă suport dual pentru scheme de control WASD 
+    (gaming) și FBLR (directional). Recepția este non-blocking prin ISR, 
+    transmisia utilizează polling UART.
+    
+    \item \texttt{car\_fsm.c/h}: Implementează logica mașinii cu stări finite pentru controlul vehiculului. Modulul gestionează tranzițiile între cele 5 stări (IDLE, FORWARD, BACKWARD, LEFT, RIGHT), procesează evenimente (comenzi Bluetooth și detecție obstacole), și coordonează activarea motoarelor prin apeluri către \texttt{motor.c}. Oferă API pentru interogarea stării curente, modificarea vitezei, și trimiterea alertelor de obstacole. Logica FSM asigură că detecția obstacolelor în stările FORWARD sau BACKWARD declanșează automat tranziția către IDLE.
+    
+    \item \texttt{ultrasonic.c/h}: Implementează protocolul de măsurare pentru senzorii HC-SR04. Modulul suportă doi senzori: frontal (ECHO pe PTC9) și posterior (ECHO pe PTA12), cu trigger partajat pe PTC8. Algoritmul măsoară durata pulsului ECHO folosind TPM2 configurat la 1.5 MHz și o convertește în distanță folosind viteza sunetului. Include mecanisme de timeout (30ms) pentru robustețe și funcții separate pentru citirea fiecărui senzor.
+    
+    \item \texttt{dht11.c/h}: Implementează protocolul proprietar 1-Wire prin bit-banging pentru senzorul DHT11, utilizând TPM1 la 3 MHz pentru timing precis. Citirea include validare checksum și gestionarea codurilor de eroare. Datorită timing-ului critic, întreruperile sunt dezactivate temporar pe durata comunicației.
+    
+    \item \texttt{ldr.c/h}: Gestionează conversia ADC pentru fotorezistor (rezoluție 12-bit). Valorile sunt calibrate empiric pentru detecția condițiilor de lumină/întuneric.
+    
+    \item \texttt{lights.c/h}: Controlul GPIO pentru LED-urile de iluminare, oferind interfață simplă pentru activare/dezactivare.
+    
+    \item \texttt{uart.c/h}: Driver low-level pentru UART0, utilizat atât pentru comunicația Bluetooth cât și pentru debug console. Oferă funcții de transmisie și recepție cu suport pentru conversii ASCII.
+\end{itemize}
+
+\subsubsection{Framework de Validare și Testare}
+Pentru facilitarea dezvoltării și debugging-ului, s-a implementat un framework modular de testare. Fiecare modul hardware poate fi testat independent prin activarea directivelor de preprocesare corespunzătoare (\texttt{\#define TEST\_LDR\_LED}, \texttt{\#define TEST\_DHT11}, etc.) în fișierul principal. Această abordare permite izolarea și diagnosticarea rapidă a problemelor hardware fără interferența celorlalte subsisteme.
+
+
+
+\section{Implementare și Detalii Tehnice}
+
+\subsection{Modulul de Comunicație Bluetooth}
+\label{sec:bluetooth}
+
+Comunicația wireless reprezintă componenta centrală pentru interacțiunea utilizatorului cu vehiculul robotizat. Implementarea utilizează modulul Bluetooth HC-05/HC-06 conectat prin interfața UART0 a microcontrolerului.
+
+\subsubsection{Configurația Hardware și UART}
+Modulul Bluetooth este configurat cu următorii parametri:
+\begin{itemize}
+    \item \textbf{Baud Rate:} 9600 bps
+    \item \textbf{Format Date:} 8 biți date, fără paritate, 1 bit stop (8N1)
+    \item \textbf{Pini UART:} PTA1 (RX), PTA2 (TX)
+    \item \textbf{Mod Operare:} Slave (acceptă conexiuni)
+    \item \textbf{Profil:} SPP (Serial Port Profile)
+\end{itemize}
+
+\subsubsection{Implementarea Recepției cu Întreruperi}
+Pentru a evita pierderea comenzilor în timpul operațiilor blocking (citiri DHT11, măsurători ultrasonice), recepția Bluetooth utilizează întreruperi UART cu buffer circular:
+
+\begin{lstlisting}[language=C]
+#define RX_BUFFER_SIZE  32
+static volatile uint8_t rxBuffer[RX_BUFFER_SIZE];
+static volatile uint8_t rxHead = 0;
+static volatile uint8_t rxTail = 0;
+
+void UART0_IRQHandler(void)
+{
+    if (UART0->S1 & UART_S1_RDRF_MASK) {
+        uint8_t byte = UART0->D;
+        uint8_t nextHead = (rxHead + 1) % RX_BUFFER_SIZE;
+        
+        if (nextHead != rxTail) {
+            rxBuffer[rxHead] = byte;
+            rxHead = nextHead;
+        }
+    }
+}
+\end{lstlisting}
+
+Buffer-ul circular de 32 bytes permite stocarea mai multor comenzi consecutive, iar mecanismul de întreruperi asigură că nicio comandă nu este pierdută.
+
+\subsubsection{Protocolul de Comenzi}
+Protocolul utilizează comenzi single-character pentru latență minimă. Tabelul~\ref{tab:bluetooth_commands} prezintă setul complet de comenzi suportate.
+
+\begin{table}[htbp]
+\caption{Comenzi Bluetooth Suportate}
+\begin{center}
+\begin{tabular}{|c|c|l|}
+\hline
+\textbf{Comandă} & \textbf{Alternativă} & \textbf{Descriere} \\
+\hline
+\multicolumn{3}{|c|}{\textit{Comenzi de Navigație}} \\
+\hline
+F & W & Deplasare înainte (Forward) \\
+B & X & Deplasare înapoi (Backward) \\
+L & A & Rotire stânga 90° (Left) \\
+R & D & Rotire dreapta 90° (Right) \\
+S & SPACE & Oprire (Stop) \\
+\hline
+\multicolumn{3}{|c|}{\textit{Control Iluminare}} \\
+\hline
+O & - & Faruri pornite forțat (On) \\
+P & - & Faruri oprite forțat (Power off) \\
+M & - & Comutare mod auto/manual (Mode) \\
+\hline
+\multicolumn{3}{|c|}{\textit{Telemetrie}} \\
+\hline
+T & - & Citire temperatură \\
+H & - & Citire umiditate \\
+U & - & Citire distanță ultrasonică \\
+I & - & Informații complete senzori \\
+\hline
+\multicolumn{3}{|c|}{\textit{Configurație}} \\
+\hline
+1-9 & - & Setare viteză (10\%-90\%) \\
+\hline
+\end{tabular}
+\label{tab:bluetooth_commands}
+\end{center}
+\end{table}
+
+Suportul dual pentru taste WASD permite compatibilitate cu interfețe tip gaming, în timp ce schemele FBLR oferă control directional intuitiv.
+
+\subsubsection{Formatul Răspunsurilor Telemetrice}
+La primirea comenzii 'I' (Info), sistemul transmite un raport complet al senzorilor în formatul următor:
+
+\begin{lstlisting}[language=C]
+=== Sensor Info ===
+State: FORWARD
+FRONT: 35 cm
+REAR: 74 cm
+Light: 2733 (ADC)
+Temp: 23.0 C
+Humidity: 52%
+==================
+\end{lstlisting}
+
+Acest format structurat permite parsarea ușoară de către aplicații mobile și oferă o imagine completă a stării sistemului.
+
+\subsubsection{Mesaje de Alertă și Stare}
+Sistemul transmite mesaje pentru evenimentele importante:
+
+\begin{itemize}
+    \item \textbf{Tranziții de stare:} 
+    \begin{lstlisting}
+>> State: FORWARD
+>> State: IDLE
+>> Pivot LEFT 90deg...
+>> Turn complete -> IDLE
+    \end{lstlisting}
+    
+    \item \textbf{Detecție obstacole:}
+    \begin{lstlisting}
+!! OBSTACLE at 15 cm - STOPPED !!
+!! REAR OBSTACLE at 8 cm - STOPPED !!
+    \end{lstlisting}
+    
+    \item \textbf{Informații debug PWM:}
+    \begin{lstlisting}
+[PWM] MOD=11999 L_duty=11999 R_duty=11999
+[FW] L=100 R=100
+[STOP]
+    \end{lstlisting}
+\end{itemize}
+
+Aceste mesaje sunt vizibile în aplicația terminal Bluetooth conectată la vehicul, permițând monitorizarea în timp real a operațiunilor.
+
+\subsubsection{Compatibilitate cu Aplicații Mobile}
+Sistemul este compatibil cu orice aplicație terminal Bluetooth care suportă profilul SPP, inclusiv:
+\begin{itemize}
+    \item Serial Bluetooth Terminal (Android)
+    \item Bluetooth Terminal HC-05 (Android)
+    \item Aplicații custom dezvoltate pentru controlul vehiculului
+\end{itemize}
+
+\subsubsection{Exemple de Output Terminal}
+Figurile~\ref{fig:terminal_telemetry} și~\ref{fig:terminal_obstacle} prezintă capturi de ecran din aplicația terminal Bluetooth, demonstrând funcționalitatea sistemului în condiții reale de operare.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.45\linewidth]{terminal1.png}
+    \caption{Output Terminal - Telemetrie Senzori. Captura prezintă răspunsurile la comanda 'I' (Info), afișând starea curentă a vehiculului (State: IDLE/FORWARD), distanțele măsurate de senzorii ultrasonici FRONT și REAR, valoarea ADC a fotorezistorului (Light), temperatura și umiditatea citite de senzorul DHT11.}
+    \label{fig:terminal_telemetry}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.45\linewidth]{terminal4.png}
+    \caption{Output Terminal - Detecție Obstacole și Control Motor. Captura prezintă secvențe de operare incluzând: tranziții de stare (FORWARD, IDLE), alerte de obstacole (``!! OBSTACLE at 5 cm - STOPPED !!'', ``!! OBSTACLE at 19 cm - STOPPED !!''), comenzi de rotire (Pivot LEFT/RIGHT 90deg), și informații debug PWM pentru controlul motoarelor.}
+    \label{fig:terminal_obstacle}
+\end{figure}
+
+\subsection{Măsurarea Distanței Ultrasonice}
+Senzorii HC-SR04 operează pe principiul reflectării undelor ultrasonice la frecvența de 40 kHz. Procesul de măsurare implică generarea unui puls de trigger de 10µs pe pinul PTC8 (partajat), urmat de măsurarea duratei pulsului ECHO pe pinul corespunzător (PTC9 pentru frontal, PTA12 pentru posterior). Conversia timpului în distanță utilizează viteza sunetului în aer ($v_{sunet} = 343$ m/s la 20°C):
+\[
+d_{cm} = \frac{t_{\mu s} \cdot v_{sunet}}{2 \cdot 10^4} \approx \frac{t_{\mu s}}{58}
+\]
+unde factorul de împărțire la 2 contabilizează distanța dus-întors. Sistemul implementează un timeout de 30ms pentru robustețe, returnând valori de eroare în absența semnalului valid.
+
+\subsection{Comunicarea cu Senzorul DHT11}
+DHT11 utilizează un protocol proprietar single-wire cu codificare temporală. Inițierea comunicației necesită un puls LOW de 20ms de la MCU, urmat de un răspuns de acknowledgment din partea senzorului (LOW 80µs, HIGH 80µs). Datele (40 biți: umiditate, temperatură, checksum) sunt transmise prin codificare pulse-width: durată HIGH de $\sim$27µs reprezintă '0', iar $\sim$70µs reprezintă '1'. Validarea integrității se face prin verificarea checksum-ului. Datorită timing-ului critic ($\pm$5µs), implementarea bit-banging necesită dezactivarea temporară a întreruperilor.
+
+\subsection{Modularea Vitezei prin PWM}
+Controlul vitezei motoarelor DC se realizează prin modularea lățimii pulsului (PWM) folosind modulele Timer/PWM (TPM0\_CH1 și TPM0\_CH2) ale microcontrolerului. Frecvența PWM de 1 kHz a fost selectată pentru a elimina efectele audibile și a asigura un control fluid al vitezei. Duty cycle-ul variabil (0-100\%) mapează direct viteza dorită:
+\[
+\text{DutyCycle} = \frac{\text{Speed}_{\%} \cdot \text{PWM\_PERIOD}}{100}
+\]
+Direcția de rotație este controlată independent prin pinii digitali IN1-IN4 ai driver-ului L293D, permițând configurarea H-bridge pentru mișcare înainte, înapoi sau frânare.
+
+
+\section{Concluzii}
+
+Această lucrare a prezentat proiectarea și implementarea unui sistem embedded de control pentru un vehicul robotizat autonom, utilizând platforma FRDM-KL25Z bazată pe arhitectura ARM Cortex-M0+. Sistemul integrează cu succes multiple periferice (doi senzori ultrasonici pentru detecție bidirecțională, senzori de temperatură/umiditate, fotorezistori) și actuatori (motoare DC, LED-uri) într-o arhitectură modulară și extensibilă.
+
+Contribuția principală constă în implementarea unei soluții complete de control wireless prin Bluetooth, cuprinzând atât funcționalități de teleoperare manuală cât și capabilități autonome de evitare a obstacolelor (frontal și posterior) și adaptare la condițiile de mediu. Arhitectura software modulară adoptată permite testarea și validarea independentă a fiecărei componente, facilitând debugging-ul și mentenanța.
+
+
+\begin{thebibliography}{00}
+\bibitem{b1} NXP Semiconductors, ``FRDM-KL25Z User's Manual,'' Rev. 3.2, 2012.
+\bibitem{b2} NXP Semiconductors, ``KL25 Sub-Family Reference Manual,'' Rev. 3, 2012.
+\bibitem{b3} Texas Instruments, ``L293D Quadruple Half-H Drivers Datasheet,'' 2017.
+\bibitem{b4} ETC, ``HC-SR04 Ultrasonic Sensor Datasheet,'' 2013.
+\bibitem{b5} Aosong Electronics, ``DHT11 Humidity \& Temperature Sensor Datasheet,'' 2010.
+\bibitem{b6} Guangzhou HC Information Technology, ``HC-05/HC-06 Bluetooth Module User's Manual,'' V2.0, 2011.
+\bibitem{b7} J. Yiu, \textit{The Definitive Guide to the ARM Cortex-M0+}, Elsevier, 2015.
+\bibitem{b8} M. Barr and A. Massa, \textit{Programming Embedded Systems in C and C++}, O'Reilly Media, 2006.
+\end{thebibliography}
+
+\end{document}
